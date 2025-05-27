@@ -1,0 +1,111 @@
+import json
+import pandas as pd
+import sqlite3
+import random
+
+# Personalized startup message
+print(f"\n🤖 Yo, it's Mark! Welcome back, Jose! Let's dig into some wrestling history.")
+
+# Connect to SQLite (Creates database if it doesn't exist)
+conn = sqlite3.connect("mark_database.db")
+cursor = conn.cursor()
+
+# Ensure the DVDs table exists
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS dvds (
+        id INTEGER PRIMARY KEY,
+        disc_number TEXT,
+        event_number TEXT,
+        date TEXT,
+        company TEXT,
+        cloud TEXT,  -- Ensures Cloud is stored as TEXT
+        hard_drive TEXT,
+        match_listing TEXT
+    )
+""")
+conn.commit()
+conn.close()
+
+# Search History for conversational improvements
+search_history = []
+
+# Function to search SQL database with partial matching
+def search_sql_data(query):
+    global search_history
+    search_history.append(query)  # Track past searches
+
+    conn = sqlite3.connect("mark_database.db")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT * FROM dvds WHERE 
+        disc_number LIKE ? OR event_number LIKE ? OR company LIKE ? OR match_listing LIKE ? OR cloud LIKE ?
+    """, ('%'+query+'%', '%'+query+'%', '%'+query+'%', '%'+query+'%', '%'+query+'%'))
+
+    results = cursor.fetchall()
+    conn.close()
+
+    response = ""
+
+    if results:
+        response += "\n📀 **DVD Collection Results:**\n"
+        response += "\n".join(
+            f"🎬 Disc #: {r[1]} | Event #: {r[2]} | Date: {r[3]} | Company: {r[4]} | Cloud: {r[5]} | Hard Drive: {r[6]} | Matches: {r[7]}"
+            for r in results
+        )
+    else:
+        response = "Nothing found, homie."
+
+    # Add conversational tracking response
+    if len(search_history) > 3:  
+        response += "\n🤔 Yo, you keep digging deep—need a different approach?"
+    
+    return response
+
+# Function to filter searches (Cloud entries, Disc #, Disc Contents)
+def search_filtered_data(filter_type):
+    conn = sqlite3.connect("mark_database.db")
+    cursor = conn.cursor()
+
+    if filter_type.lower() == "cloud":
+        cursor.execute("SELECT * FROM dvds WHERE cloud IS NOT NULL AND cloud != ''")  # Gets all Cloud entries
+    elif filter_type.isdigit():  # Disc # search
+        cursor.execute("SELECT * FROM dvds WHERE disc_number = ?", (filter_type,))
+    else:  # Allows Cloud-specific searches & Disc Contents (Match Listings)
+        cursor.execute("SELECT * FROM dvds WHERE cloud LIKE ? OR match_listing LIKE ?", ('%' + filter_type + '%', '%' + filter_type + '%'))
+
+    results = cursor.fetchall()
+    conn.close()
+
+    return "\n📀 **Filtered Results:**\n" + "\n".join(
+        f"🎬 {r[3]} - {r[4]} | Cloud: {r[5]} | Disc #: {r[1]} | Matches: {r[7]}"
+        for r in results
+    ) if results else "Nothing found, homie."
+
+# Randomized farewells
+farewells = [
+    "Aight, I’m out. Peace!",
+    "This convo is tapping out! One.",
+    "Cool, gotta holler at someone, later!",
+    "Mark is signing off—Deuces, my guy."
+]
+
+# Chatbot loop with natural command detection
+while True:
+    user_input = input("\nAsk me about a wrestling event or DVD (or type 'show me Cloud', 'show me Disc #', 'show me 45A1'): ")
+
+    if user_input.lower() in ["exit", "quit"]:
+        print(random.choice(farewells))
+        break
+
+    elif user_input.lower().startswith(("filter:", "show me")):
+        filter_request = user_input.split(":")[-1].strip() if "filter:" in user_input else user_input.split("show me")[-1].strip()
+
+        # Handle Disc # properly
+        if filter_request.isdigit():
+            print(search_filtered_data(filter_request))
+        else:
+            print(search_sql_data(filter_request))  # Ensures Match Listings work too
+
+    else:
+        print(search_sql_data(user_input))
