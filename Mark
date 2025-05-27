@@ -4,7 +4,7 @@ import sqlite3
 import random
 
 # Personalized startup message
-print(f"\n🤖 Yo, it's Mark! Welcome back, Jose! Let's dig into some wrestling history.")
+print(f"\n🤖 Yo, it's Mark! Welcome back, Jose! Let's get this damn wrestling data rollin’.")
 
 # Connect to SQLite (Creates database if it doesn't exist)
 conn = sqlite3.connect("mark_database.db")
@@ -26,7 +26,7 @@ cursor.execute("""
 conn.commit()
 conn.close()
 
-# Search History for conversational improvements
+# Search History for tracking past queries
 search_history = []
 
 # Function to search SQL database with partial matching
@@ -45,54 +45,55 @@ def search_sql_data(query):
     results = cursor.fetchall()
     conn.close()
 
-    response = ""
-
     if results:
-        response += "\n📀 **DVD Collection Results:**\n"
+        response = f"\n📀 **Here you go, boss. Pulled some damn good results for '{query}':**\n"
         response += "\n".join(
-            f"🎬 Disc #: {r[1]} | Event #: {r[2]} | Date: {r[3]} | Company: {r[4]} | Cloud: {r[5]} | Hard Drive: {r[6]} | Matches: {r[7]}"
+            f"🎬 Disc #: {r[1]} | Event #: {r[2]} | Date: {r[3]} | Company: {r[4]} | Cloud: {r[5]} | Matches: {r[7]}"
             for r in results
         )
     else:
-        response = "Nothing found, homie."
+        response = f"\n🛑 **Bruh, that weak-ass search ain't got nothing.** Try again."
 
-    # Add conversational tracking response
+    # Add some street flavor based on past searches
     if len(search_history) > 3:  
-        response += "\n🤔 Yo, you keep digging deep—need a different approach?"
+        response += f"\n🧐 **Yo, Jose—you done hit up '{query}' like 3 times. You good, homie?**"
     
     return response
 
-# Function to filter searches (Cloud entries, Disc #, Disc Contents)
+# Function to filter searches (Cloud entries, Disc #, Match Listings)
 def search_filtered_data(filter_type):
     conn = sqlite3.connect("mark_database.db")
     cursor = conn.cursor()
 
     if filter_type.lower() == "cloud":
         cursor.execute("SELECT * FROM dvds WHERE cloud IS NOT NULL AND cloud != ''")  # Gets all Cloud entries
+        response_tag = "🌩 Cloud Entries"
     elif filter_type.isdigit():  # Disc # search
         cursor.execute("SELECT * FROM dvds WHERE disc_number = ?", (filter_type,))
-    else:  # Allows Cloud-specific searches & Disc Contents (Match Listings)
+        response_tag = f"💿 Disc #{filter_type}"
+    else:  # Allows Cloud-specific searches & Match Listings (Disc Contents)
         cursor.execute("SELECT * FROM dvds WHERE cloud LIKE ? OR match_listing LIKE ?", ('%' + filter_type + '%', '%' + filter_type + '%'))
+        response_tag = f"📜 Results for '{filter_type}'"
 
     results = cursor.fetchall()
     conn.close()
 
-    return "\n📀 **Filtered Results:**\n" + "\n".join(
+    return f"\n🔍 **{response_tag}:**\n" + "\n".join(
         f"🎬 {r[3]} - {r[4]} | Cloud: {r[5]} | Disc #: {r[1]} | Matches: {r[7]}"
         for r in results
-    ) if results else "Nothing found, homie."
+    ) if results else f"\n🛑 **Bruh, that ain't it. Try another filter.**"
 
-# Randomized farewells
+# Randomized thug-style farewells
 farewells = [
-    "Aight, I’m out. Peace!",
-    "This convo is tapping out! One.",
-    "Cool, gotta holler at someone, later!",
-    "Mark is signing off—Deuces, my guy."
+    "👊 Aight, I'm out. You handle yo' business.",
+    "🚀 This convo just tapped out—ONE!",
+    "🔥 Cool, but I got better things to do. Holla!",
+    "💨 Mark is signing off—you deal with yo' mess."
 ]
 
-# Chatbot loop with natural command detection
+# Chatbot loop with natural command detection & memory-based responses
 while True:
-    user_input = input("\nAsk me about a wrestling event or DVD (or type 'show me Cloud', 'show me Disc #', 'show me 45A1'): ")
+    user_input = input("\nAsk me about wrestling data (or type 'show me Cloud', 'show me Disc #', 'show me 45A1'): ")
 
     if user_input.lower() in ["exit", "quit"]:
         print(random.choice(farewells))
