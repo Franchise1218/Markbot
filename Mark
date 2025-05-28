@@ -2,9 +2,10 @@ import json
 import pandas as pd
 import sqlite3
 import random
+import subprocess
 
 # Personalized startup message
-print(f"\n🤖 Yo, it's Mark! Welcome back, Jose! Let's get this damn wrestling data rollin’.")
+print(f"\n🤖 Yo, it's Mark! Welcome back, Jose! Let’s get this damn wrestling data rollin’.")
 
 # Connect to SQLite (Creates database if it doesn't exist)
 conn = sqlite3.connect("mark_database.db")
@@ -18,9 +19,18 @@ cursor.execute("""
         event_number TEXT,
         date TEXT,
         company TEXT,
-        cloud TEXT,  -- Ensures Cloud is stored as TEXT
+        cloud TEXT,
         hard_drive TEXT,
         match_listing TEXT
+    )
+""")
+
+# Ensure match results table exists for storing scraped events
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS match_results (
+        id INTEGER PRIMARY KEY,
+        event_name TEXT,
+        matches TEXT
     )
 """)
 conn.commit()
@@ -66,12 +76,12 @@ def search_filtered_data(filter_type):
     cursor = conn.cursor()
 
     if filter_type.lower() == "cloud":
-        cursor.execute("SELECT * FROM dvds WHERE cloud IS NOT NULL AND cloud != ''")  # Gets all Cloud entries
+        cursor.execute("SELECT * FROM dvds WHERE cloud IS NOT NULL AND cloud != ''")
         response_tag = "🌩 Cloud Entries"
-    elif filter_type.isdigit():  # Disc # search
+    elif filter_type.isdigit():  
         cursor.execute("SELECT * FROM dvds WHERE disc_number = ?", (filter_type,))
         response_tag = f"💿 Disc #{filter_type}"
-    else:  # Allows Cloud-specific searches & Match Listings (Disc Contents)
+    else:  
         cursor.execute("SELECT * FROM dvds WHERE cloud LIKE ? OR match_listing LIKE ?", ('%' + filter_type + '%', '%' + filter_type + '%'))
         response_tag = f"📜 Results for '{filter_type}'"
 
@@ -83,6 +93,38 @@ def search_filtered_data(filter_type):
         for r in results
     ) if results else f"\n🛑 **Bruh, that ain't it. Try another filter.**"
 
+# Function to fetch wrestling match results dynamically
+def get_match_results(event_name):
+    """
+    Calls the R scraper and stores match results in SQL for future reference.
+    """
+    conn = sqlite3.connect("mark_database.db")
+    cursor = conn.cursor()
+
+    # Check if event is already stored
+    cursor.execute("SELECT matches FROM match_results WHERE event_name = ?", (event_name,))
+    result = cursor.fetchone()
+
+    if result:
+        return f"\n🎤 **Match Results for {event_name}**\n{result[0]}"
+
+    # If not stored, scrape match results
+    command = f'Rscript -e "source(\'/Users/josemarrero/MarkBot/smark_scraper.R\'); cat(scrape_event_matches(\'{event_name}\'), sep = \'\\n\')"'
+    process = subprocess.run(command, shell=True, capture_output=True, text=True)
+    match_data = process.stdout.strip().split("\n")
+
+    if match_data:
+        matches_text = "\n".join(match_data)
+
+        # Store results in SQL for future lookups
+        cursor.execute("INSERT INTO match_results (event_name, matches) VALUES (?, ?)", (event_name, matches_text))
+        conn.commit()
+        conn.close()
+
+        return f"\n🎤 **Match Results for {event_name}**\n{matches_text}"
+    
+    return f"\n🛑 **No match results found for {event_name}. Try again.**"
+
 # Randomized thug-style farewells
 farewells = [
     "👊 Aight, I'm out. You handle yo' business.",
@@ -93,20 +135,23 @@ farewells = [
 
 # Chatbot loop with natural command detection & memory-based responses
 while True:
-    user_input = input("\nAsk me about wrestling data (or type 'show me Cloud', 'show me Disc #', 'show me 45A1'): ")
+    user_input = input("\nAsk me about wrestling data (or type 'show me Cloud', 'show me Disc #', 'show me 45A1', or a wrestling event name): ").strip()
 
     if user_input.lower() in ["exit", "quit"]:
         print(random.choice(farewells))
         break
 
+    elif "matches for" in user_input or "wrestling event" in user_input:
+        event_name = user_input.replace("matches for", "").replace("wrestling event", "").strip()
+        print(get_match_results(event_name))
+
     elif user_input.lower().startswith(("filter:", "show me")):
         filter_request = user_input.split(":")[-1].strip() if "filter:" in user_input else user_input.split("show me")[-1].strip()
 
-        # Handle Disc # properly
         if filter_request.isdigit():
             print(search_filtered_data(filter_request))
         else:
-            print(search_sql_data(filter_request))  # Ensures Match Listings work too
+            print(search_sql_data(filter_request))
 
     else:
         print(search_sql_data(user_input))
