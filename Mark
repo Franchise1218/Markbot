@@ -3,19 +3,29 @@ import pandas as pd
 import sqlite3
 import random
 import subprocess
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+import time
 
 # Personalized startup message
-print(f"\n🤖 Yo, it's Mark! Welcome back, Jose! Let’s get this damn wrestling data rollin’.")
+print("\n💀 Listen up, you absolute mark. I ain’t got time for dumb questions. Let’s get this wrestling data rollin’.")
 
-# Load Excel Sheet (Using Correct File Path)
+# Load Excel Sheet
 excel_file = "/Users/josemarrero/Desktop/Cloud Log Ins/MASTER DVD.xlsx"
 df = pd.read_excel(excel_file)
 
-# Connect to SQLite (Creates database if it doesn't exist)
+# Ensure text-based columns are correctly formatted to avoid `.str.contains()` errors
+text_columns = ["DiscContents", "Event Number", "Company", "CLOUD", "Book", "HARD DRIVE"]
+for col in text_columns:
+    if col in df.columns:
+        df[col] = df[col].astype(str).fillna("")
+
+# Connect to SQLite
 conn = sqlite3.connect("mark_database.db")
 cursor = conn.cursor()
 
-# Ensure the DVDs table exists
+# Ensure the database tables exist
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS dvds (
         id INTEGER PRIMARY KEY,
@@ -25,21 +35,22 @@ cursor.execute("""
         date TEXT,
         company TEXT,
         cloud TEXT,
+        book TEXT,
         hard_drive TEXT,
         match_listing TEXT
+    )
+""")
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS match_results (
+        event_name TEXT PRIMARY KEY,
+        matches TEXT
     )
 """)
 conn.commit()
 conn.close()
 
-# Search History for tracking past queries
-search_history = []
-
-# Function to search SQL and Excel while ensuring Disc # and DiscContents appear together
+# Function to search SQL and Excel for wrestling data (Triggered by "search:")
 def search_sql_data(query):
-    global search_history
-    search_history.append(query)
-
     conn = sqlite3.connect("mark_database.db")
     cursor = conn.cursor()
 
@@ -53,26 +64,61 @@ def search_sql_data(query):
 
     # Query SQL Database
     if disc_number:
-        cursor.execute("SELECT disc_number, DiscContents, event_number, date, company, cloud, match_listing FROM dvds WHERE disc_number = ?", (disc_number,))
+        cursor.execute("SELECT disc_number, DiscContents, event_number, date, company, cloud, book, hard_drive, match_listing FROM dvds WHERE disc_number = ?", (disc_number,))
         results += cursor.fetchall()
     elif contents_query:
-        cursor.execute("SELECT disc_number, DiscContents, event_number, date, company, cloud, match_listing FROM dvds WHERE DiscContents LIKE ?", ('%' + contents_query + '%',))
+        cursor.execute("SELECT disc_number, DiscContents, event_number, date, company, cloud, book, hard_drive, match_listing FROM dvds WHERE DiscContents LIKE ?", ('%' + contents_query + '%',))
         results += cursor.fetchall()
 
     conn.close()
 
     # Query Excel if SQL is empty
     if not results:
-        excel_results = df[df.apply(lambda x: query.lower() in str(x).lower(), axis=1)]
-        results += excel_results[["Disc #", "DiscContents", "Event Number", "Date", "Company", "CLOUD", "HARD DRIVE"]].values.tolist()
+        excel_results = df[
+            (df["DiscContents"].str.contains(contents_query, case=False, na=False)) |
+            (df["Event Number"].str.contains(contents_query, case=False, na=False)) |
+            (df["Company"].str.contains(contents_query, case=False, na=False)) |
+            (df["CLOUD"].str.contains(contents_query, case=False, na=False)) |
+            (df["Book"].str.contains(contents_query, case=False, na=False)) |
+            (df["HARD DRIVE"].str.contains(contents_query, case=False, na=False))
+        ]
+
+        if disc_number:
+            excel_results = df[df["Disc #"].astype(str) == disc_number]
+
+        results += excel_results[["Disc #", "DiscContents", "Event Number", "Date", "Company", "CLOUD", "Book", "HARD DRIVE", "match_listing"]].values.tolist()
 
     if results:
         response = f"\n📀 **Here you go, boss. Pulled results for '{query}':**\n"
-        response += "\n".join(f"🎬 Disc #: {r[0]} | DiscContents: {r[1]} | Event #: {r[2]} | Date: {r[3]} | Company: {r[4]} | Cloud: {r[5]} | Matches: {r[6]}" for r in results)
+        response += "\n".join(f"🎬 Disc #: {r[0]} | DiscContents: {r[1]} | Event #: {r[2]} | Date: {r[3]} | Company: {r[4]} | Cloud: {r[5]} | Book: {r[6]} | Hard Drive: {r[7]} | Matches: {r[8]}" for r in results)
     else:
         response = f"\n🛑 **Bruh, that weak-ass search ain't got nothing.** Try again."
 
     return response
+
+# Selenium function to query Copilot for wrestling insights
+def ask_copilot(query):
+    print(f"\n🧠 Let me ask your damn AI overlord about '{query}'—because clearly, you don’t know squat.")
+
+    driver = webdriver.Chrome()
+    driver.get("https://copilot.microsoft.com/")
+    time.sleep(5)
+
+    try:
+        chat_box = driver.find_element(By.ID, "userInput") 
+        chat_box.send_keys(query)
+        chat_box.send_keys(Keys.RETURN)
+
+        time.sleep(5)
+
+        response = driver.find_element(By.CSS_SELECTOR, "div.text-base").text 
+
+    except Exception as e:
+        response = f"\n🛑 **Copilot failed because you broke something. Error: {str(e)}**"
+
+    driver.quit()
+    
+    return f"\n🗣 **Copilot says:** {response}"
 
 # Function to fetch wrestling match results using the scraper
 def get_match_results(event_name):
@@ -103,28 +149,28 @@ def get_match_results(event_name):
     
     return f"\n🛑 **No match results found for {event_name}. Try again.**"
 
-# Chatbot loop with natural command detection
+# Chatbot loop using "search:" trigger
 while True:
-    user_input = input("\nAsk me about wrestling data (or type 'show me Disc #', or a wrestling event name): ").strip()
+    user_input = input("\nAsk me about wrestling data (or use 'search:' for structured queries): ").strip()
     
     print(f"\n🧐 Debugging Mark's Query: {user_input}")  
 
     if user_input.lower() in ["exit", "quit"]:
         print(random.choice([
-            "👊 Aight, I'm out. You handle yo' business.",
+            "👊 Aight, I'm out. Try not to ruin wrestling history while I’m gone.",
             "🚀 This convo just tapped out—ONE!",
-            "🔥 Cool, but I got better things to do. Holla!",
-            "💨 Mark is signing off—you deal with yo' mess."
+            "🔥 Cool, but I got better things to do.",
+            "💨 Mark is signing off—you deal with your own mess."
         ]))
         break
+
+    elif user_input.lower().startswith("search:"):
+        query = user_input.replace("search:", "").strip()
+        print(search_sql_data(query))
 
     elif "matches for" in user_input or "wrestling event" in user_input:
         event_name = user_input.replace("matches for", "").replace("wrestling event", "").strip()
         print(get_match_results(event_name))
 
-    elif user_input.lower().startswith("show me"):
-        query = user_input.replace("show me", "").strip()
-        print(search_sql_data(query))
-    
     else:
-        print(search_sql_data(user_input))
+        print(ask_copilot(user_input))
